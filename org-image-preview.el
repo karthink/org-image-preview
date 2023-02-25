@@ -218,9 +218,11 @@ buffer boundaries with possible narrowing."
    ((not (display-graphic-p)) nil)
    ((equal arg '(64))
     (if (org--inline-image-overlays (point-min) (point-max))
-        (org-remove-inline-images (point-min) (point-max))))
+        (org-remove-inline-images (point-min) (point-max)))
+    (message "Cleared image previews from buffer."))
    ((equal arg '(16))
-    (org-image-preview--in-region nil 'refresh (point-min) (point-max)))
+    (org-image-preview--in-region nil 'refresh (point-min) (point-max))
+    (message "Created image previews in buffer."))
    ((equal arg '(4))
     (org-remove-inline-images
      (if (use-region-p)
@@ -247,7 +249,7 @@ buffer boundaries with possible narrowing."
                  (save-excursion
                    (org-with-limited-levels (org-back-to-heading t) (point)))))
           (end (org-with-limited-levels (org-entry-end-position))))
-      (message "Creating image previews in section...")
+      (message "Created image previews in section.")
       (org-image-preview--in-region nil 'refresh beg end)))))
 
 (provide 'org-image-preview)
