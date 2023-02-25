@@ -190,6 +190,11 @@ buffer boundaries with possible narrowing."
 (defvar org-image-preview--video-previewer
   (executable-find "ffmpegthumbnailer"))
 
+;; Other options
+;; ffmpeg -i input.mp4 -vf  "thumbnail,scale=640:360" -frames:v 1 thumb.png
+;; ffmpeg -ss 3 -i input.mp4 -vf "select=gt(scene\,0.4)" -frames:v 5 -vsync vfr -vf fps=fps=1/600 out%02d.jpg
+;; ffmpeg -ss 00:00:01.0 -i input.mp4 -frames:v 1 thumb.png
+
 (defun org-image-preview--update-overlay (file link)
   (let ((width (org-display-inline-image--width link))
 	(old (get-char-property-and-overlay
