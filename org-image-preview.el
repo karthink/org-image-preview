@@ -144,25 +144,35 @@ buffer boundaries with possible narrowing."
                   (when (and file (file-exists-p file))
 		    (org-image-preview--update-overlay file link)))))))))))
 
+(defvar org-image-preview-use-persist nil
+  "Persist images using org persist.")
+
 (defun org-image-preview--cache-path (path)
   "TODO"
   (when (file-exists-p path)
     (let* ((mtime (file-attribute-modification-time
                   (file-attributes path)))
-           (hash (sha1 (concat path (format "%S" mtime)))))
-      (cadr
-       (or (org-persist-read org-image-preview--cache-name
-                             (list :key hash)
-                             nil nil
-                             :read-related t)
-           (let ((tempfile (org-image-preview--make-video-preview path)))
-             (prog1
-                 (org-persist-register (list org-image-preview--cache-name
-                                             `(file ,tempfile))
-                                       (list :key hash)
-                                       :expiry nil
-                                       :write-immediately t)
-               (and tempfile (delete-file tempfile)))))))))
+           (hash (sha1 (concat path (prin1-to-string mtime)))))
+      (if org-image-preview-use-persist
+          (or (cadr (org-persist-read org-image-preview--cache-name
+                                      (list :key hash)
+                                      nil nil
+                                      :read-related t))
+              (let ((tempfile (org-image-preview--make-video-preview path)))
+                (prog1
+                    (cadr (org-persist-register `(,org-image-preview--cache-name
+                                                  (file ,tempfile))
+                                                (list :key hash)
+                                                :expiry 7
+                                                :write-immediately t))
+                  (and tempfile (delete-file tempfile)))))
+        (let ((image-file (expand-file-name (concat "org-image-preview-" hash ".png")
+                                            temporary-file-directory)))
+          (if (file-exists-p image-file)
+              image-file
+            (when-let ((new-preview (org-image-preview--make-video-preview path)))
+              (rename-file new-preview image-file 'overwrite)
+              image-file)))))))
 
 (defun org-image-preview--make-video-preview (path)
   (let ((output-file (make-temp-file "org-image-preview-" nil ".png")))
