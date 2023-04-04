@@ -28,7 +28,7 @@
 (require 'org-persist)
 
 (defvar org-image-preview-file-name-extensions
-  (purecopy '("mp4" "mkv" "mov" "avi" "flv")))
+  (purecopy '("mp4" "mkv" "mov" "avi" "flv" "webm")))
 
 (defun org-image-preview--video-file-name-regexp ()
   "Return a regular expression matching image-file filenames."
