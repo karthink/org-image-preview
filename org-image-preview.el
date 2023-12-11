@@ -27,6 +27,11 @@
 (require 'org)
 (require 'org-persist)
 
+(defcustom org-image-preview-center nil
+  "Whether image previews should be centered."
+  :type 'boolean
+  :group 'org-image-preview)
+
 (defvar org-image-preview-file-name-extensions
   (purecopy '("mp4" "mkv" "mov" "avi" "flv" "webm")))
 
@@ -218,7 +223,13 @@ buffer boundaries with possible narrowing."
 	    (overlay-put ov 'display image)
 	    (overlay-put ov 'face 'default)
 	    (overlay-put ov 'org-image-overlay t)
-	    (overlay-put
+	    (when org-image-preview-center
+              (overlay-put
+               ov 'before-string
+               (propertize
+                " " 'display `(space :align-to (- center (0.55 . ,image)))
+                'face 'default)))
+            (overlay-put
 	     ov 'modification-hooks
 	     (list 'org-display-inline-remove-overlay))
 	    (when (boundp 'image-map)
