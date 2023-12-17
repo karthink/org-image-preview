@@ -27,10 +27,24 @@
 (require 'org)
 (require 'org-persist)
 
-(defcustom org-image-preview-center nil
-  "Whether image previews should be centered."
-  :type 'boolean
-  :group 'org-image-preview)
+(defcustom org-image-align nil
+  "How to align images previewed using `org-display-inline-images'.
+
+Only stand-alone image links are affected by this setting.  These
+are links without surrounding text.
+
+Possible values of this option are:
+
+nil      Insert image at specified position (same as left-alignment).
+center   Center image previews.
+right    Right-align image previews."
+  :group 'org-appearance
+  :package-version '(Org . "9.7")
+  :type '(choice
+          (const :tag "Don\\='t align image previews" nil)
+	  (const :tag "Center image previews" center)
+	  (const :tag "Right align image previews" right))
+  :safe #'symbolp)
 
 (defvar org-image-preview-file-name-extensions
   (purecopy '("mp4" "mkv" "mov" "avi" "flv" "webm")))
@@ -202,7 +216,8 @@ buffer boundaries with possible narrowing."
 
 (defun org-image-preview--update-overlay (file link)
   (let ((width (org-display-inline-image--width link))
-	(old (get-char-property-and-overlay
+	(align (org-image--align link))
+        (old (get-char-property-and-overlay
 	      (org-element-property :begin link)
 	      'org-image-overlay)))
     (if (and (car-safe old) refresh)
@@ -223,18 +238,53 @@ buffer boundaries with possible narrowing."
 	    (overlay-put ov 'display image)
 	    (overlay-put ov 'face 'default)
 	    (overlay-put ov 'org-image-overlay t)
-	    (when org-image-preview-center
-              (overlay-put
-               ov 'before-string
-               (propertize
-                " " 'display `(space :align-to (- center (0.55 . ,image)))
-                'face 'default)))
             (overlay-put
 	     ov 'modification-hooks
 	     (list 'org-display-inline-remove-overlay))
 	    (when (boundp 'image-map)
 	      (overlay-put ov 'keymap image-map))
-	    (push ov org-inline-image-overlays)))))))
+	    (when align
+              (overlay-put
+               ov 'before-string
+               (propertize
+                " " 'face 'default
+                'display
+                (pcase align
+                  ((or 'center 'justify)
+                   `(space :align-to (- center (0.5 . (,width)))))
+                  ('right  `(space :align-to (- right (,width))))))))
+            (push ov org-inline-image-overlays)))))))
+
+(defun org-image--align (link)
+  "Determine the alignment of the image link.
+
+This is controlled globally by the option `org-image-align', and
+per image by the value of `:align' in the affiliated keyword
+`#+attr_org'.
+
+The result is one of the symbols center, justify or right.  The
+first two will cause the image preview to be centered, the last
+will cause it to be right-aligned.  A return value of nil implies
+no special alignment -- the image preview is overlaid on the link
+exactly where it appears in the buffer."
+  (let ((par (org-element-lineage link 'paragraph)))
+    ;; Only apply when image is not surrounded by paragraph text:
+    (when (and (= (org-element-property :begin link)
+                  (org-element-property :contents-begin par))
+               (<= (- (org-element-property :contents-end par)
+                      (org-element-property :end link))
+                   1))                  ;account for trailing newline
+      (save-match-data
+        ;; Look for a valid :align keyword (left, center, justify or right)
+        (if-let* ((attr-org (car-safe (org-element-property :attr_org par)))
+                  (_ (string-match ":align[[:space:]]+\\(\\w+\\)" attr-org))
+                  (attr-align (car-safe
+                               (memq (intern (match-string 1 attr-org))
+                                     '(left center justify right)))))
+            (unless (eq attr-align 'left) attr-align)
+          ;; No image-specific keyword, check global alignment property
+          (when (memq org-image-align '(center justify right))
+            org-image-align))))))
 
 ;;;###autoload
 (defun org-image-preview (&optional arg)
