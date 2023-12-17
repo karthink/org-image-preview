@@ -27,10 +27,25 @@
 (require 'org)
 (require 'org-persist)
 
-(defcustom org-image-preview-center nil
-  "Whether image previews should be centered."
-  :type 'boolean
-  :group 'org-image-preview)
+(defcustom org-image-align nil
+  "How to align images previewed using `org-display-inline-images'.
+
+Only stand-alone image links are affected by this setting.  These
+are links without surrounding text.
+
+Possible values of this option are:
+
+nil      Insert image at specified position.
+left     Insert image at specified position (same as nil).
+center   Center image previews.
+right    Right-align image previews."
+  :group 'org-appearance
+  :package-version '(Org . "9.7")
+  :type '(choice
+          (const :tag "Left align (or don\\='t align) image previews" nil)
+	  (const :tag "Center image previews" center)
+	  (const :tag "Right align image previews" right))
+  :safe #'symbolp)
 
 (defvar org-image-preview-file-name-extensions
   (purecopy '("mp4" "mkv" "mov" "avi" "flv" "webm")))
@@ -202,7 +217,8 @@ buffer boundaries with possible narrowing."
 
 (defun org-image-preview--update-overlay (file link)
   (let ((width (org-display-inline-image--width link))
-	(old (get-char-property-and-overlay
+	(align (org-image--align link))
+        (old (get-char-property-and-overlay
 	      (org-element-property :begin link)
 	      'org-image-overlay)))
     (if (and (car-safe old) refresh)
@@ -214,7 +230,7 @@ buffer boundaries with possible narrowing."
 		     (progn
 		       (goto-char
 			(org-element-property :end link))
-		       (skip-chars-backward " \t")
+		       (unless (eolp) (skip-chars-backward " \t"))
 		       (point)))))
             ;; FIXME: See bug#59902.  We cannot rely
             ;; on Emacs to update image if the file
@@ -223,18 +239,75 @@ buffer boundaries with possible narrowing."
 	    (overlay-put ov 'display image)
 	    (overlay-put ov 'face 'default)
 	    (overlay-put ov 'org-image-overlay t)
-	    (when org-image-preview-center
-              (overlay-put
-               ov 'before-string
-               (propertize
-                " " 'display `(space :align-to (- center (0.55 . ,image)))
-                'face 'default)))
             (overlay-put
 	     ov 'modification-hooks
 	     (list 'org-display-inline-remove-overlay))
 	    (when (boundp 'image-map)
 	      (overlay-put ov 'keymap image-map))
-	    (push ov org-inline-image-overlays)))))))
+	    (when align
+              (overlay-put
+               ov 'before-string
+               (propertize
+                " " 'face 'default
+                'display
+                (pcase align
+                  ("center"
+                   `(space :align-to (- center (0.5 . ,image))))
+                  ("right"  `(space :align-to (- right ,image)))))))
+            (push ov org-inline-image-overlays)))))))
+
+
+(defun org-image--align (link)
+  "Determine the alignment of the image link.
+
+In decreasing order of priority, this is controlled:
+- Per image by the value of `:center' or ``:align' in the
+affiliated keyword `#+attr_org'.
+- By the `#+attr_html' or `#+attr_latex` keywords with valid
+  `:center' or `:align' values.
+- Globally by the user option `org-image-align'.
+
+The result is either nil or one of the strings \"left\",
+\"center\" or \"right\".
+
+\"center\" will cause the image preview to be centered, \"right\"
+will cause it to be right-aligned.  A value of \"left\" or nil
+implies no special alignment."
+  (let ((par (org-element-lineage link 'paragraph)))
+    ;; Only align when image is not surrounded by paragraph text:
+    (when (and (= (org-element-begin link)
+                  (save-excursion
+                    (goto-char (org-element-contents-begin par))
+                    (skip-chars-forward "\t ")
+                    (point)))           ;account for leading space
+                                        ;before link
+               (<= (- (org-element-contents-end par)
+                      (org-element-end link))
+                   1))                  ;account for trailing newline
+                                        ;at end of paragraph
+      (save-match-data
+        ;; Look for a valid ":center t" or ":align left|center|right"
+        ;; attribute.
+        ;;
+        ;; An attr_org keyword has the highest priority, with
+        ;; attr_html/attr_latex next.  Choosing between these two is
+        ;; unspecified.
+        (let ((align-re "\\(?::\\(center\\)[[:space:]]+t\\b\\|:align[[:space:]]+\\(\\w+\\)\\)"))
+          (if-let ((attr-align
+                     (or (and-let* ((attr-org (car-safe (org-element-property :attr_org par)))
+                                    ((string-match align-re attr-org)))
+                           (or (match-string 1 attr-org) (match-string 2 attr-org)))
+                         (and-let* ((attr-html (car-safe (org-element-property :attr_html par)))
+                                    ((string-match align-re attr-html)))
+                           (or (match-string 1 attr-html) (match-string 2 attr-html)))
+                         (and-let* ((attr-latex (car-safe (org-element-property :attr_latex par)))
+                                    ((string-match align-re attr-latex)))
+                           (or (match-string 1 attr-latex) (match-string 2 attr-latex))))))
+              (when (member attr-align '("center" "right")) attr-align)
+            ;; No image-specific keyword, check global alignment property
+            (when (memq org-image-align '(center right))
+              (symbol-name org-image-align))))))))
+
 
 ;;;###autoload
 (defun org-image-preview (&optional arg)
