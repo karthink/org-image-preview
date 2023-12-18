@@ -244,16 +244,42 @@ buffer boundaries with possible narrowing."
 	    (when (boundp 'image-map)
 	      (overlay-put ov 'keymap image-map))
 	    (when align
-              (overlay-put
-               ov 'before-string
-               (propertize
-                " " 'face 'default
-                'display
-                (pcase align
-                  ((or 'center 'justify)
-                   `(space :align-to (- center (0.5 . (,width)))))
-                  ('right  `(space :align-to (- right (,width))))))))
+              (let ((extra-text
+                     (pcase align
+                       ((or 'center 'justify)
+                        (propertize
+                         " " 'face 'default
+                         'display
+                         `(space :align-to (- center (0.5 . (,width))))))
+                       ('right  (propertize
+                                 " " 'face 'default
+                                 'display
+                                 (space :align-to (- right (,width)))))
+                       ((or 'left-text 'right-text)
+                        (org-image--justify-text link (image-size image 'pixels))))))
+                (overlay-put
+                 ov 'before-string
+                 (if (eq align 'right-text) 'after-string 'before-string)
+                 extra-text)))
             (push ov org-inline-image-overlays)))))))
+
+(defun org-image--justify-text (link size)
+  ";TODO: "
+  (let* ((par (org-element-lineage link 'paragraph))
+         (ch (default-line-height))
+         (cw (default-font-width))
+         (text-pixel-width (- (window-text-width)
+                              (car size)
+                              8))
+         (chars-per-line (floor text-pixel-width cw))
+         (num-lines (floor (cdr size) ch))
+         (side-text-size (* chars-per-line num-lines))
+         (side-text-begin-pos (1+ (org-element-property :end link)))
+         (side-text-end-pos (min (org-element-property :contents-end par)
+                                 (+ side-text-begin-pos side-text-size))))
+
+     
+    ))
 
 (defun org-image--align (link)
   "Determine the alignment of the image link.
@@ -267,21 +293,31 @@ first two will cause the image preview to be centered, the last
 will cause it to be right-aligned.  A return value of nil implies
 no special alignment -- the image preview is overlaid on the link
 exactly where it appears in the buffer."
-  (let ((par (org-element-lineage link 'paragraph)))
+  (let ((par (org-element-lineage link 'paragraph))
+        align-with-text)
     ;; Only apply when image is not surrounded by paragraph text:
-    (when (and (= (org-element-property :begin link)
-                  (org-element-property :contents-begin par))
-               (<= (- (org-element-property :contents-end par)
-                      (org-element-property :end link))
-                   1))                  ;account for trailing newline
+    (when (or (and (= (org-element-property :begin link)
+                      (org-element-property :contents-begin par))
+                   (<= (- (org-element-property :contents-end par)
+                          (org-element-property :end link))
+                       1))              ;account for trailing newline
+              (setq align-with-text
+                    (and 
+                     (equal (char-after (org-element-property :end link)) 10)
+                     (save-excursion (goto-char (org-element-property :begin link))
+                                     (bolp)))))
       (save-match-data
         ;; Look for a valid :align keyword (left, center, justify or right)
         (if-let* ((attr-org (car-safe (org-element-property :attr_org par)))
-                  (_ (string-match ":align[[:space:]]+\\(\\w+\\)" attr-org))
+                  ((string-match ":align[[:space:]]+\\(\\w+\\)" attr-org))
                   (attr-align (car-safe
-                               (memq (intern (match-string 1 attr-org))
-                                     '(left center justify right)))))
-            (unless (eq attr-align 'left) attr-align)
+                               (member (match-string 1 attr-org)
+                                     '("left" "center" "justify" "right")))))
+            (progn
+              (if align-with-text
+                  (when (member attr-align '("left" "right"))
+                    (intern (concat attr-align "-text")))
+                (unless (equal attr-align "left") (intern attr-align))))
           ;; No image-specific keyword, check global alignment property
           (when (memq org-image-align '(center justify right))
             org-image-align))))))
