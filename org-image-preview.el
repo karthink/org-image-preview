@@ -27,7 +27,7 @@
 (require 'org)
 (require 'org-persist)
 
-(defcustom org-image-align nil
+(defcustom org-image-align 'left
   "How to align images previewed using `org-display-inline-images'.
 
 Only stand-alone image links are affected by this setting.  These
@@ -35,14 +35,13 @@ are links without surrounding text.
 
 Possible values of this option are:
 
-nil      Insert image at specified position.
-left     Insert image at specified position (same as nil).
+left     Insert image at specified position.
 center   Center image previews.
 right    Right-align image previews."
   :group 'org-appearance
   :package-version '(Org . "9.7")
   :type '(choice
-          (const :tag "Left align (or don\\='t align) image previews" nil)
+          (const :tag "Left align (or don\\='t align) image previews" left)
 	  (const :tag "Center image previews" center)
 	  (const :tag "Right align image previews" right))
   :safe #'symbolp)
@@ -256,7 +255,6 @@ buffer boundaries with possible narrowing."
                   ("right"  `(space :align-to (- right ,image)))))))
             (push ov org-inline-image-overlays)))))))
 
-
 (defun org-image--align (link)
   "Determine the alignment of the image link.
 
@@ -290,19 +288,24 @@ implies no special alignment."
         ;; attribute.
         ;;
         ;; An attr_org keyword has the highest priority, with
-        ;; attr_html/attr_latex next.  Choosing between these two is
+        ;; any attr.* next.  Choosing between these is
         ;; unspecified.
-        (let ((align-re "\\(?::\\(center\\)[[:space:]]+t\\b\\|:align[[:space:]]+\\(\\w+\\)\\)"))
-          (if-let ((attr-align
-                     (or (and-let* ((attr-org (car-safe (org-element-property :attr_org par)))
-                                    ((string-match align-re attr-org)))
-                           (or (match-string 1 attr-org) (match-string 2 attr-org)))
-                         (and-let* ((attr-html (car-safe (org-element-property :attr_html par)))
-                                    ((string-match align-re attr-html)))
-                           (or (match-string 1 attr-html) (match-string 2 attr-html)))
-                         (and-let* ((attr-latex (car-safe (org-element-property :attr_latex par)))
-                                    ((string-match align-re attr-latex)))
-                           (or (match-string 1 attr-latex) (match-string 2 attr-latex))))))
+        (let ((center-re ":\\(center\\)[[:space:]]+t\\b")
+              (align-re ":align[[:space:]]+\\(left\\|center\\|right\\)\\b")
+              attr-align)
+          (catch 'exit
+            (org-element-properties-mapc
+             (lambda (propname propval)
+               (when (and propval
+                          (string-match-p ":attr.*" (symbol-name propname)))
+                 (setq propval (car-safe propval))
+                 (when (or (string-match center-re propval)
+                           (string-match align-re propval))
+                   (setq attr-align (match-string 1 propval))
+                   (when (eq propname :attr_org)
+                     (throw 'exit t)))))
+             par))
+          (if attr-align
               (when (member attr-align '("center" "right")) attr-align)
             ;; No image-specific keyword, check global alignment property
             (when (memq org-image-align '(center right))
